@@ -1,13 +1,25 @@
+import 'dart:async';
+
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:travel/views/splash/splash_screen.dart';
 import 'firebase_options.dart';
+import 'services/push_notification_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+
+  // Must be registered before runApp so messages that arrive while the app is
+  // terminated are still handled.
+  FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+
+  // Push setup is best-effort: a failure here must never block app start.
+  unawaited(PushNotificationService.initialise());
+
   runApp(const MyApp());
 }
 

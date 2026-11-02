@@ -6,6 +6,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 
 import '../../controllers/auth_controller.dart';
 import '../../utils/device_utils.dart';
+import '../../config/app_config.dart';
 import '../dashboard/dashboard_page.dart';
 import 'google_profile_setup_page.dart';
 import 'signup_page.dart';
@@ -215,6 +216,15 @@ class _LoginPageState extends State<LoginPage> {
   }
 
 
+  /// Placeholder for Sign in with Apple.
+  ///
+  /// Deliberately NOT wired to the Google handler — doing that is what made the
+  /// Apple button silently run a Google sign-in. Implement with the
+  /// `sign_in_with_apple` package, then flip AppConfig.appleSignInEnabled.
+  Future<void> _loginWithApple() async {
+    _showError('Sign in with Apple is not available yet.');
+  }
+
   Future<void> _loginWithGoogle() async {
     setState(() => _isLoading = true);
 
@@ -338,36 +348,38 @@ class _LoginPageState extends State<LoginPage> {
                   ),
                 ),
               ),
-              const SizedBox(height: 30),
-              GestureDetector(
-                onTap: _isLoading ? null : _loginWithGoogle,
-                child: Container(
-                  width: double.infinity,
-                  height: 48,
-                  decoration: BoxDecoration(
-                    // color: Colors.black,
-                    borderRadius: BorderRadius.circular(5),
-                    border: Border.all(
-                      color: Colors.black, // 👈 change this to any color
-                      width: 0.5,
+              // Hidden until Sign in with Apple is actually implemented —
+              // see AppConfig.appleSignInEnabled.
+              if (AppConfig.appleSignInEnabled) ...[
+                const SizedBox(height: 30),
+                GestureDetector(
+                  onTap: _isLoading ? null : _loginWithApple,
+                  child: Container(
+                    width: double.infinity,
+                    height: 48,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(5),
+                      border: Border.all(
+                        color: Colors.black,
+                        width: 0.5,
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Image.asset(
+                          "assets/images/apple.png",
+                          width: 20,
+                        ),
+                        const Text(
+                          "    Continue with Apple",
+                          style: TextStyle(color: Colors.black),
+                        ),
+                      ],
                     ),
                   ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Image.asset(
-                        "assets/images/apple.png",
-                        width: 20,
-                      ),
-                      const Text(
-                        "    Continue with Apple",
-                        style: TextStyle(color: Colors.black),
-                      ),
-                    ],
-                  ),
                 ),
-              ),
-
+              ],
 
               const SizedBox(height: 40),
 

@@ -47,6 +47,10 @@ dependencies:
   intl: ^0.20.2
   flutter_intl_phone_field: ^0.0.7
   language_picker: ^0.4.0+2
+  webview_flutter: ^4.14.1
+  http: ^1.6.0
+  firebase_messaging: ^16.7.1
+  flutter_local_notifications: ^22.3.2
 
 dev_dependencies:
   flutter_test:
@@ -58,6 +62,10 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
+
+  # Generates the Android/iOS launcher icons from a single source image.
+  # Run after changing the source:  dart run flutter_launcher_icons
+  flutter_launcher_icons: ^0.14.4
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
@@ -101,3 +109,16 @@ flutter:
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
+
+# Launcher icons are generated from one square source image.
+# Requirements: 1024x1024 PNG, no transparency on the `image_path` version.
+# The adaptive foreground should be the bird alone on a transparent canvas,
+# with ~25% padding — Android crops adaptive icons to a circle/squircle and
+# anything near the edge gets cut off.
+flutter_launcher_icons:
+  android: true
+  ios: true
+  remove_alpha_ios: true
+  image_path: "assets/icon/kuruvi_icon.png"
+  adaptive_icon_background: "#FFFFFF"
+  adaptive_icon_foreground: "assets/icon/kuruvi_icon_foreground.png"

@@ -50,7 +50,7 @@ class DefaultFirebaseOptions {
   }
 
   static const FirebaseOptions android = FirebaseOptions(
-    apiKey: 'AIzaSyBCZFoZyaluVg6juIF2HtYx_4i8fR6zyt8',
+    apiKey: 'AIzaSyCrw_vjgrMKm2E6uxC1CU7h3mg3DBhf1s8',
     appId: '1:252418943052:android:ce9e5c1e799d3bd034ece9',
     messagingSenderId: '252418943052',
     projectId: 'travel-v01',
@@ -58,7 +58,7 @@ class DefaultFirebaseOptions {
   );
 
   static const FirebaseOptions ios = FirebaseOptions(
-    apiKey: 'AIzaSyABA4cZVE7xF2n6FxepNtVr5V3UdNcsilg',
+    apiKey: 'AIzaSyB_djwpBSZxd86gMMoqUEE0UWbHvuM2E2A',
     appId: '1:252418943052:ios:efbd3c451521eea734ece9',
     messagingSenderId: '252418943052',
     projectId: 'travel-v01',

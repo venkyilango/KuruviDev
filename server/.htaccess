@@ -1,0 +1,8 @@
+# Nothing in this folder should be downloadable as text — only the PHP
+# endpoints are meant to be reached over HTTP. Blocks README.md and any
+# stray .bak/.log/.json left behind by an editor or a half-finished upload.
+<FilesMatch "\.(md|bak|backup|old|orig|log|json|sql|ini|yml|yaml|txt)$">
+    Require all denied
+</FilesMatch>
+
+Options -Indexes

@@ -87,14 +87,27 @@ class AuthController {
       throw 'You must be at least 18 years old to register';
     }
 
-    if (await isUsernameAlreadyTaken(username)) {
+    // Each remote step gets its own deadline. Firestore retries a lost
+    // connection forever and FirebaseAuth can stall behind a wedged Play
+    // Services, so without these a failure here shows as a spinner that never
+    // goes away — and the message names the step that actually stalled.
+    final taken = await isUsernameAlreadyTaken(username).timeout(
+      const Duration(seconds: 15),
+      onTimeout: () => throw 'Could not reach the database (username check timed out)',
+    );
+    if (taken) {
       throw 'Username already taken';
     }
 
-    final cred = await _auth.createUserWithEmailAndPassword(
-      email: email.trim(),
-      password: password,
-    );
+    final cred = await _auth
+        .createUserWithEmailAndPassword(
+          email: email.trim(),
+          password: password,
+        )
+        .timeout(
+          const Duration(seconds: 30),
+          onTimeout: () => throw 'Sign-up timed out while creating the account',
+        );
 
     final uid = cred.user!.uid;
 
@@ -124,7 +137,10 @@ class AuthController {
       // 🧩 META
       'profileCompleted': true,
       'createdAt': FieldValue.serverTimestamp(),
-    });
+    }).timeout(
+      const Duration(seconds: 30),
+      onTimeout: () => throw 'Account created, but saving your profile timed out',
+    );
   }
 
   /* -------------------------------------------------------------------------- */

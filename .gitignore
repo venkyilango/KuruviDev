@@ -1,0 +1,78 @@
+# ---------------------------------------------------------------------------
+# Secrets — never commit
+# ---------------------------------------------------------------------------
+# Holds API_KEY, APP_SECRET and the mail/SMTP credentials for the OTP service.
+# Deploy it straight to Hostinger; keep it out of the repo.
+server/config.php
+
+# Carries `apiKey`, the shared secret the OTP endpoints check. Copy
+# app_config.example.dart to app_config.dart and paste the real key.
+lib/config/app_config.dart
+
+# Firebase client configuration
+android/app/google-services.json
+ios/Runner/GoogleService-Info.plist
+lib/firebase_options.dart
+
+# Android signing
+*.jks
+*.keystore
+android/key.properties
+android/local.properties
+
+# Service accounts / private keys
+*-service-account.json
+serviceAccountKey.json
+*.p8
+*.p12
+*.pem
+.env
+.env.*
+
+# Editor backups that could contain the above
+*.bak
+*.backup
+*.orig
+
+# ---------------------------------------------------------------------------
+# Build output & caches
+# ---------------------------------------------------------------------------
+/build/
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+
+# Android
+android/.gradle/
+android/app/debug/
+android/app/profile/
+android/app/release/
+android/.idea/
+*.iml
+
+# iOS
+ios/Pods/
+ios/.symlinks/
+ios/Flutter/Flutter.framework
+ios/Flutter/Flutter.podspec
+ios/Flutter/Generated.xcconfig
+ios/Flutter/flutter_export_environment.sh
+ios/Runner/GeneratedPluginRegistrant.*
+
+# Cloud Functions
+functions/node_modules/
+functions/npm-debug.log
+firebase-debug.log
+.firebase/
+
+# ---------------------------------------------------------------------------
+# IDE / OS
+# ---------------------------------------------------------------------------
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db

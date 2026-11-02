@@ -4,13 +4,17 @@ import 'package:flutter/material.dart';
 import 'package:flutter_intl_phone_field/flutter_intl_phone_field.dart';
 import 'package:internet_connection_checker_plus/internet_connection_checker_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../config/app_config.dart';
 import '../../controllers/auth_controller.dart';
 import '../../main.dart';
+import '../../services/otp_service.dart';
 import '../../utils/device_utils.dart';
 import '../../utils/location_utils.dart';
 import '../../utils/validators.dart';
 import '../dashboard/dashboard_page.dart';
+import '../legal/legal_viewer_page.dart';
 import 'google_profile_setup_page.dart';
+import 'signup_otp_page.dart';
 
 class SignupPage extends StatefulWidget {
   const SignupPage({super.key});
@@ -51,6 +55,12 @@ class _SignupPageState extends State<SignupPage> {
     await prefs.setString('user_uid', uid);
     await prefs.setString('user_email', email);
     await prefs.setString('username', username);
+  }
+
+  /// Placeholder for Sign in with Apple — see AppConfig.appleSignInEnabled.
+  /// Not wired to _googleSignup; that mix-up is the bug this replaces.
+  Future<void> _appleSignup() async {
+    _showError('Sign in with Apple is not available yet.');
   }
 
   Future<void> _googleSignup() async {
@@ -148,6 +158,8 @@ class _SignupPageState extends State<SignupPage> {
 
 
 
+  /// Step 1 of sign-up: validate, then send a verification code to the email.
+  /// The account is only created after the code is confirmed.
   void _signup() async {
     setState(() {
       _emailError = null;
@@ -162,88 +174,168 @@ class _SignupPageState extends State<SignupPage> {
       return;
     }
 
+    setState(() => _isLoading = true);
+
     final bool isConnected = await InternetConnection().hasInternetAccess;
-    if (isConnected) {
+    if (!mounted) return;
 
-        try {
-          showDialog(
-            context: context,
-            barrierDismissible: false,
-            builder: (_) => const Center(child: CircularProgressIndicator()),
-          );
-
-
-          final deviceType = DeviceUtils.getDeviceType();
-          final location = await LocationUtils.getLocation();
-
-          await AuthController().createUser(
-            email: _emailController.text,
-            password: _passwordController.text,
-            username: _usernameController.text,
-            contact: _fullPhoneNumber ?? "",
-            dob: _dobController.text,
-            deviceType: deviceType,
-            latitude: location['lat']!,
-            longitude: location['lng']!,
-          );
-
-
-
-          Navigator.of(context).pop();
-
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text("Account created successfully"),
-              backgroundColor: Colors.green,
-              duration: Duration(seconds: 2),
-            ),
-          );
-
-          Future.delayed(const Duration(seconds: 2), () {
-            Navigator.pop(context); // back to login
-          });
-
-
-        } catch (e) {
-          Navigator.of(context).pop();
-          if (e == 'LOCATION_SERVICE_DISABLED') {
-            _showEnableLocationDialog();
-          } else if (e == 'LOCATION_PERMISSION_DENIED') {
-            _showError(
-              "Location permission is required to continue",
-            );
-          } else {
-            final msg = e.toString();
-            if (e is FirebaseAuthException) {
-              if (e.code == 'email-already-in-use') {
-                _emailError = "This email is already registered";
-              } else if (e.code == 'invalid-email') {
-                _emailError = "Enter a valid email address";
-              } else if (e.code == 'weak-password') {
-                _showError("Password is too weak");
-                return;
-              }
-            } else if (msg.contains('email-already-in-use') ||
-                msg.contains('already in use')) {
-              _emailError = "This email is already registered";
-            } else if (msg.contains('username') &&
-                msg.contains('already')) {
-              _usernameError = "This username is already taken";
-            }
-
-            if (_emailError != null || _usernameError != null) {
-              setState(() {});
-              _formKey.currentState!.validate();
-            } else {
-              _showError(msg);
-            }
-          }
-        }
-
-    } else {
+    if (!isConnected) {
       setState(() => _isLoading = false);
       _showError("Internet not available");
+      return;
     }
+
+    final email = _emailController.text.trim();
+
+    // Don't burn an OTP on an address that can't be registered anyway.
+    try {
+      final taken = await AuthController().isUsernameAlreadyTaken(
+        _usernameController.text,
+      );
+      if (!mounted) return;
+      if (taken) {
+        setState(() {
+          _isLoading = false;
+          _usernameError = "This username is already taken";
+        });
+        _formKey.currentState!.validate();
+        return;
+      }
+    } catch (_) {
+      // Non-fatal: createUser re-checks before writing.
+    }
+
+    final sent = await OtpService.sendOtp(email);
+    if (!mounted) return;
+
+    setState(() => _isLoading = false);
+
+    if (!sent.ok) {
+      _showError(sent.message ?? "Could not send the verification code");
+      return;
+    }
+
+    final proof = await Navigator.push<String>(
+      context,
+      MaterialPageRoute(builder: (_) => SignupOtpPage(email: email)),
+    );
+
+    // User backed out without verifying — leave the form intact.
+    if (proof == null || !mounted) return;
+
+    await _createAccount();
+  }
+
+  /// Step 2: the email is verified, so create the account for real.
+  Future<void> _createAccount() async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+
+    var dialogOpen = true;
+    void closeDialog() {
+      if (dialogOpen && mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+        dialogOpen = false;
+      }
+    }
+
+    try {
+      final deviceType = DeviceUtils.getDeviceType();
+      // Location is a nice-to-have, never a reason to block sign-up. Geolocator's
+      // own `timeLimit` does not always fire on Android — when it doesn't, the
+      // await never returns and the user is stuck on a barrier-less dialog. An
+      // outer timeout guarantees we move on either way.
+      final location = await LocationUtils.getLocation()
+          .timeout(const Duration(seconds: 20))
+          .catchError((_) => <String, double>{});
+
+      await AuthController().createUser(
+        email: _emailController.text,
+        password: _passwordController.text,
+        username: _usernameController.text,
+        contact: _fullPhoneNumber ?? "",
+        dob: _dobController.text,
+        deviceType: deviceType,
+        latitude: location['lat'],
+        longitude: location['lng'],
+      );
+
+      if (!mounted) return;
+      closeDialog();
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Account created successfully"),
+          backgroundColor: Colors.green,
+          duration: Duration(seconds: 2),
+        ),
+      );
+
+      await Future.delayed(const Duration(seconds: 2));
+      if (mounted) Navigator.pop(context); // back to login
+    } catch (e) {
+      if (!mounted) return;
+      closeDialog();
+      _handleSignupError(e);
+    }
+  }
+
+  /// Turns whatever came back into something a user can act on.
+  void _handleSignupError(Object e) {
+    if (e == 'LOCATION_SERVICE_DISABLED') {
+      _showEnableLocationDialog();
+      return;
+    }
+    if (e == 'LOCATION_PERMISSION_DENIED') {
+      _showError("Location permission is required to continue");
+      return;
+    }
+    if (e == 'LOCATION_TIMEOUT') {
+      _showError(
+        "Couldn't get your location. Move somewhere with a clearer signal "
+        "and try again.",
+      );
+      return;
+    }
+
+    final msg = e.toString();
+
+    if (e is FirebaseAuthException) {
+      switch (e.code) {
+        case 'email-already-in-use':
+          _emailError = "This email is already registered";
+          break;
+        case 'invalid-email':
+          _emailError = "Enter a valid email address";
+          break;
+        case 'weak-password':
+          _showError("Password is too weak");
+          return;
+        case 'network-request-failed':
+          _showError("Network error. Please check your connection.");
+          return;
+        default:
+          _showError("Could not create your account. Please try again.");
+          return;
+      }
+    } else if (msg.contains('email-already-in-use') ||
+        msg.contains('already in use')) {
+      _emailError = "This email is already registered";
+    } else if (msg.contains('username') && msg.contains('already')) {
+      _usernameError = "This username is already taken";
+    } else if (msg.contains('18 years')) {
+      _showError("You must be at least 18 years old to register");
+      return;
+    } else {
+      _showError(msg);
+      return;
+    }
+
+    setState(() {});
+    _formKey.currentState!.validate();
   }
 
   Widget _buildLoadingOverlay() {
@@ -261,78 +353,20 @@ class _SignupPageState extends State<SignupPage> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
-  void _showTermsAndConditions() {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) {
-        return Container(
-          padding: const EdgeInsets.all(20),
-          height: MediaQuery.of(context).size.height * 0.7,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Header
-              const Center(
-                child: Text(
-                  "Terms & Conditions",
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
-                ),
-              ),
+  /// Opens the hosted Terms & Conditions in an in-app viewer so the user can
+  /// read them without losing their place in the sign-up form.
+  void _openTerms() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => LegalViewerPage.terms()),
+    );
+  }
 
-              const SizedBox(height: 20),
-
-              // Scrollable content
-              Expanded(
-                child: SingleChildScrollView(
-                  child: Text('''
-Lorem ipsum dolor sit amet, consectetur adipiscing elit. 
-Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.
-
-1. You must be at least 18 years old to use this application.
-2. You agree not to misuse the platform.
-3. Your data will be stored securely and processed according to our privacy policy.
-4. The application is provided "as is" without warranties.
-5. We reserve the right to suspend accounts violating our terms.
-
-Lorem ipsum dolor sit amet, consectetur adipiscing elit. 
-Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.
-
-Lorem ipsum dolor sit amet, consectetur adipiscing elit. 
-Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.
-                  ''', style: const TextStyle(fontSize: 14, height: 1.6)),
-                ),
-              ),
-
-              const SizedBox(height: 20),
-
-              // Close button
-              SizedBox(
-                width: double.infinity,
-                height: 45,
-                child: ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF3E729F),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                  ),
-                  onPressed: () {
-                    Navigator.pop(context);
-                  },
-                  child: const Text(
-                    "Close",
-                    style: TextStyle(color: Colors.white),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        );
-      },
+  /// Opens the hosted Privacy Policy in an in-app viewer.
+  void _openPrivacyPolicy() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => LegalViewerPage.privacy()),
     );
   }
 
@@ -383,35 +417,38 @@ Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.
                     ),
                   ),
                 ),
-                const SizedBox(height: 30),
-                GestureDetector(
-                  onTap: _isLoading ? null : _googleSignup,
-                  child: Container(
-                    width: double.infinity,
-                    height: 48,
-                    decoration: BoxDecoration(
-                      // color: Colors.black,
-                      borderRadius: BorderRadius.circular(5),
-                      border: Border.all(
-                        color: Colors.black, // 👈 change this to any color
-                        width: 0.5,
+                // Hidden until Sign in with Apple is actually implemented —
+                // see AppConfig.appleSignInEnabled.
+                if (AppConfig.appleSignInEnabled) ...[
+                  const SizedBox(height: 30),
+                  GestureDetector(
+                    onTap: _isLoading ? null : _appleSignup,
+                    child: Container(
+                      width: double.infinity,
+                      height: 48,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(5),
+                        border: Border.all(
+                          color: Colors.black,
+                          width: 0.5,
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Image.asset(
+                            "assets/images/apple.png",
+                            width: 20,
+                          ),
+                          const Text(
+                            "    Continue with Apple",
+                            style: TextStyle(color: Colors.black),
+                          ),
+                        ],
                       ),
                     ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Image.asset(
-                          "assets/images/apple.png",
-                          width: 20,
-                        ),
-                        const Text(
-                          "    Continue with Apple",
-                          style: TextStyle(color: Colors.black),
-                        ),
-                      ],
-                    ),
                   ),
-                ),
+                ],
                 const SizedBox(height: 30),
                 Form(
                   key: _formKey,
@@ -505,6 +542,9 @@ Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.
                       TextFormField(
                         controller: _dobController,
                         readOnly: true,
+                        // Tapping the field itself is the natural gesture; the
+                        // suffix icon alone is easy to miss.
+                        onTap: _selectDOB,
                         decoration: InputDecoration(
                           labelText: "Date of Birth",
                           prefixIcon: const Icon(Icons.calendar_today),
@@ -572,28 +612,27 @@ Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.
                               children: [
                                 const Text("I agree to the ",style: TextStyle(fontSize: 12),),
                                 GestureDetector(
-                                  onTap: () {
-                                    _showTermsAndConditions();
-                                  },
+                                  onTap: _openTerms,
                                   child: const Text(
                                     "Terms & Conditions",
                                     style: TextStyle(
-                                      color: Colors.black,
+                                      color: Color(0xFF3E729F),
                                       fontSize: 12,
+                                      fontWeight: FontWeight.w600,
                                       decoration: TextDecoration.underline,
                                     ),
                                   ),
                                 ),
-                                Text(" and ",style: TextStyle(fontSize: 12)),
+                                const Text(" and ",
+                                    style: TextStyle(fontSize: 12)),
                                 GestureDetector(
-                                  onTap: () {
-                                    _showTermsAndConditions();
-                                  },
+                                  onTap: _openPrivacyPolicy,
                                   child: const Text(
                                     "Privacy policy",
                                     style: TextStyle(
-                                      color: Colors.black,
+                                      color: Color(0xFF3E729F),
                                       fontSize: 12,
+                                      fontWeight: FontWeight.w600,
                                       decoration: TextDecoration.underline,
                                     ),
                                   ),

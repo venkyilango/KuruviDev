@@ -21,15 +21,29 @@ class LocationUtils {
       throw 'LOCATION_PERMISSION_DENIED';
     }
 
-    // 3️⃣ Get location
-    final position = await Geolocator.getCurrentPosition(
-      desiredAccuracy: LocationAccuracy.high,
-    );
-
-    return {
-      'lat': position.latitude,
-      'lng': position.longitude,
-    };
+    // 3️⃣ Get location.
+    // A time limit is essential: without one this waits forever when no fix is
+    // available (indoors, or an emulator with no mock location), leaving the
+    // caller stuck on a spinner. Fall back to the last known fix if we have one.
+    try {
+      final position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+        timeLimit: const Duration(seconds: 15),
+      );
+      return {
+        'lat': position.latitude,
+        'lng': position.longitude,
+      };
+    } catch (_) {
+      final last = await Geolocator.getLastKnownPosition();
+      if (last != null) {
+        return {
+          'lat': last.latitude,
+          'lng': last.longitude,
+        };
+      }
+      throw 'LOCATION_TIMEOUT';
+    }
   }
 
   static Future<void> openLocationSettings() async {
